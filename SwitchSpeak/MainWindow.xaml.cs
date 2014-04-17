@@ -1,59 +1,61 @@
 ﻿using System;
-using System.Linq;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Linq;
 using System.Net.Sockets;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using Sharparam.SharpBlade.Native;
+using Sharparam.SharpBlade.Razer;
+using Sharparam.SharpBlade.Razer.Events;
 using TS3QueryLib.Core;
 using TS3QueryLib.Core.Client;
 using TS3QueryLib.Core.Client.Entities;
+using TS3QueryLib.Core.Client.Notification.Enums;
 using TS3QueryLib.Core.Client.Notification.EventArgs;
 using TS3QueryLib.Core.Client.Responses;
 using TS3QueryLib.Core.Common;
 using TS3QueryLib.Core.Common.Responses;
 using TS3QueryLib.Core.Communication;
-using Sharparam.SharpBlade.Razer;
-using System.Threading;
-using System.Windows.Controls;
-using Sharparam.SharpBlade.Razer.Events;
-using Sharparam.SharpBlade.Native;
-using System.Windows.Media;
-using System.Diagnostics;
 using TS3QueryLib.Core.Server.Entities;
+using TS3QueryLib.Core.Server.Notification.EventArgs;
 using ChannelListEntry = TS3QueryLib.Core.Client.Entities.ChannelListEntry;
 
 namespace SwitchSpeak
 {
     /// <summary>
-    /// Interaction logic for MainWindow.xaml
+    ///     Interaction logic for MainWindow.xaml
     /// </summary>
-    public partial class MainWindow : Window
+    public partial class MainWindow
     {
-        private AsyncTcpDispatcher AsyncQueryDispatcher;
-        private SyncTcpDispatcher SyncQueryDispatcher;
-        private TS3QueryLib.Core.Client.QueryRunner AsyncClientQueryRunner;
-        private TS3QueryLib.Core.Server.QueryRunner AsyncServerQueryRunner;
-        private QueryRunner SyncQueryRunner;
-        private WhoAmIResponse me;
-        private ObservableCollection<ChannelListEntry> Channels;
+        private QueryRunner _asyncClientQueryRunner;
+        private AsyncTcpDispatcher _asyncQueryDispatcher;
+        private TS3QueryLib.Core.Server.QueryRunner _asyncServerQueryRunner;
+        private ObservableCollection<ChannelListEntry> _channels;
+        private SyncTcpDispatcher _syncQueryDispatcher;
+        private QueryRunner _syncQueryRunner;
+        private WhoAmIResponse _me;
 
-        private DragScrollViewerAdaptor scrollViewerAdaptor;
-        private ScrollViewer scroller;
+        private DragScrollViewerAdaptor _scrollViewerAdaptor;
+        private ScrollViewer _scroller;
 
         public MainWindow()
         {
             InitializeComponent();
-            TextWriterTraceListener td = new TextWriterTraceListener("debug.log");
+            var td = new TextWriterTraceListener("debug.log");
             Debug.Listeners.Add(td);
-            System.AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             RazerProvider.Razer.Touchpad.Gesture += TouchpadOnGesture;
             RazerProvider.Razer.Touchpad.EnableGesture(RazerAPI.GestureType.Tap);
-            RazerProvider.Razer.EnableDynamicKey(RazerAPI.DynamicKeyType.DK10, (s, x) => Connect(), @"Default\refresh.png", @"Default\refresh.png", true);
+            RazerProvider.Razer.EnableDynamicKey(RazerAPI.DynamicKeyType.DK10, (s, x) => Connect(),
+                @"Default\refresh.png", @"Default\refresh.png", true);
         }
 
-        void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
-            Debug.WriteLine(((Exception)e.ExceptionObject));
+            Debug.WriteLine(e.ExceptionObject);
         }
 
         private void TouchpadOnGesture(object sender, GestureEventArgs args)
@@ -63,33 +65,35 @@ namespace SwitchSpeak
             switch (args.GestureType)
             {
                 case RazerAPI.GestureType.Move:
-                    scrollViewerAdaptor.MouseMove(pos);
+                    _scrollViewerAdaptor.MouseMove(pos);
                     break;
                 case RazerAPI.GestureType.Press:
-                    scrollViewerAdaptor.MouseLeftButtonDown(pos);
+                    _scrollViewerAdaptor.MouseLeftButtonDown(pos);
                     break;
                 case RazerAPI.GestureType.Release:
-                    scrollViewerAdaptor.MouseLeftButtonUp();
+                    _scrollViewerAdaptor.MouseLeftButtonUp();
                     break;
                 case RazerAPI.GestureType.Tap:
                     HitTestResult result = VisualTreeHelper.HitTest(treeSpeak, pos);
                     if (result != null)
                     {
-                        TreeViewItem tvi = result.VisualHit.FindParent<TreeViewItem>();
+                        var tvi = result.VisualHit.FindParent<TreeViewItem>();
                         if (tvi != null)
                         {
-                            if (tvi.DataContext is TS3QueryLib.Core.Server.Entities.ClientListEntry)
+                            var context = tvi.DataContext as ClientListEntry;
+                            if (context != null)
                             {
                                 //we tapped on a client
-                                var client = (TS3QueryLib.Core.Server.Entities.ClientListEntry)tvi.DataContext;
+                                var client = context;
                                 Debug.WriteLine(string.Format("Tapped on client : {0}", client.Nickname));
                             }
-                            if (tvi.DataContext is ChannelListEntry)
+                            var entry = tvi.DataContext as ChannelListEntry;
+                            if (entry != null)
                             {
                                 //we tapped on a channel
-                                var channel = (ChannelListEntry)tvi.DataContext;
+                                var channel = entry;
                                 Debug.WriteLine(string.Format("Tapped on channel : {0}", channel.Name));
-                                AsyncServerQueryRunner.MoveClient(me.ClientId, channel.ChannelId);
+                                _asyncServerQueryRunner.MoveClient(_me.ClientId, channel.ChannelId);
                             }
                         }
                     }
@@ -100,8 +104,8 @@ namespace SwitchSpeak
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             WindowHelper.ExtendWindowStyleWithTool(this);
-            scroller = (ScrollViewer)treeSpeak.Template.FindName("Scroller", treeSpeak);
-            scrollViewerAdaptor = new DragScrollViewerAdaptor(scroller);
+            _scroller = (ScrollViewer) treeSpeak.Template.FindName("Scroller", treeSpeak);
+            _scrollViewerAdaptor = new DragScrollViewerAdaptor(_scroller);
 
             RazerProvider.Razer.Touchpad.SetWindow(this, Touchpad.RenderMethod.Polling, new TimeSpan(0, 0, 0, 0, 42));
 
@@ -114,11 +118,11 @@ namespace SwitchSpeak
             {
                 Disconnect();
 
-                SyncQueryDispatcher = new SyncTcpDispatcher("localhost", 25639);
-                SyncQueryRunner = new QueryRunner(SyncQueryDispatcher);
+                _syncQueryDispatcher = new SyncTcpDispatcher("localhost", 25639);
+                _syncQueryRunner = new QueryRunner(_syncQueryDispatcher);
 
-                me = SyncQueryRunner.SendWhoAmI();
-                if (me.IsErroneous)
+                _me = _syncQueryRunner.SendWhoAmI();
+                if (_me.IsErroneous)
                 {
                     Debug.WriteLine("Not a TS3 client!");
                     Disconnect();
@@ -126,15 +130,15 @@ namespace SwitchSpeak
                 }
 
                 GetChannelList();
-                treeSpeak.ItemsSource = Channels;
+                treeSpeak.ItemsSource = _channels;
 
-                AsyncQueryDispatcher = new AsyncTcpDispatcher("localhost", 25639);
-                AsyncQueryDispatcher.BanDetected += QueryDispatcher_BanDetected;
-                AsyncQueryDispatcher.ReadyForSendingCommands += QueryDispatcher_ReadyForSendingCommands;
-                AsyncQueryDispatcher.ServerClosedConnection += QueryDispatcher_ServerClosedConnection;
-                AsyncQueryDispatcher.SocketError += QueryDispatcher_SocketError;
-                AsyncQueryDispatcher.NotificationReceived += QueryDispatcher_NotificationReceived;
-                AsyncQueryDispatcher.Connect();
+                _asyncQueryDispatcher = new AsyncTcpDispatcher("localhost", 25639);
+                _asyncQueryDispatcher.BanDetected += QueryDispatcher_BanDetected;
+                _asyncQueryDispatcher.ReadyForSendingCommands += QueryDispatcher_ReadyForSendingCommands;
+                _asyncQueryDispatcher.ServerClosedConnection += QueryDispatcher_ServerClosedConnection;
+                _asyncQueryDispatcher.SocketError += QueryDispatcher_SocketError;
+                _asyncQueryDispatcher.NotificationReceived += QueryDispatcher_NotificationReceived;
+                _asyncQueryDispatcher.Connect();
             }
             catch (Exception ex)
             {
@@ -143,29 +147,31 @@ namespace SwitchSpeak
             }
         }
 
-        private void QueryDispatcher_ReadyForSendingCommands(object sender, System.EventArgs e)
+        private void QueryDispatcher_ReadyForSendingCommands(object sender, EventArgs e)
         {
             // you can only run commands on the queryrunner when this event has been raised first!
-            AsyncClientQueryRunner = new TS3QueryLib.Core.Client.QueryRunner(AsyncQueryDispatcher);
-            AsyncClientQueryRunner.Notifications.ChannelTalkStatusChanged += Notifications_ChannelTalkStatusChanged;
-            AsyncClientQueryRunner.RegisterForNotifications(ClientNotifyRegisterEvent.Any);
+            _asyncClientQueryRunner = new QueryRunner(_asyncQueryDispatcher);
+            _asyncClientQueryRunner.Notifications.ChannelTalkStatusChanged += Notifications_ChannelTalkStatusChanged;
+            _asyncClientQueryRunner.RegisterForNotifications(ClientNotifyRegisterEvent.Any);
 
-            AsyncServerQueryRunner = new TS3QueryLib.Core.Server.QueryRunner(AsyncQueryDispatcher);
-            AsyncServerQueryRunner.Notifications.ClientConnectionLost += Notifications_ClientConnectionLost;
-            AsyncServerQueryRunner.Notifications.ClientDisconnect += Notifications_ClientDisconnect;
-            AsyncServerQueryRunner.Notifications.ClientJoined += Notifications_ClientJoined;
-            AsyncServerQueryRunner.Notifications.ClientKick += Notifications_ClientKick;
-            AsyncServerQueryRunner.Notifications.ClientMoved += Notifications_ClientMoved;
-            AsyncServerQueryRunner.Notifications.ClientMovedByTemporaryChannelCreate += Notifications_ClientMovedByTemporaryChannelCreate;
-            AsyncServerQueryRunner.Notifications.ClientMoveForced += Notifications_ClientMoveForced;
-            AsyncServerQueryRunner.RegisterForNotifications(TS3QueryLib.Core.Server.Entities.ServerNotifyRegisterEvent.Server | TS3QueryLib.Core.Server.Entities.ServerNotifyRegisterEvent.Channel);
+            _asyncServerQueryRunner = new TS3QueryLib.Core.Server.QueryRunner(_asyncQueryDispatcher);
+            _asyncServerQueryRunner.Notifications.ClientConnectionLost += Notifications_ClientConnectionLost;
+            _asyncServerQueryRunner.Notifications.ClientDisconnect += Notifications_ClientDisconnect;
+            _asyncServerQueryRunner.Notifications.ClientJoined += Notifications_ClientJoined;
+            _asyncServerQueryRunner.Notifications.ClientKick += Notifications_ClientKick;
+            _asyncServerQueryRunner.Notifications.ClientMoved += Notifications_ClientMoved;
+            _asyncServerQueryRunner.Notifications.ClientMovedByTemporaryChannelCreate +=
+                Notifications_ClientMovedByTemporaryChannelCreate;
+            _asyncServerQueryRunner.Notifications.ClientMoveForced += Notifications_ClientMoveForced;
+            _asyncServerQueryRunner.RegisterForNotifications(ServerNotifyRegisterEvent.Server |
+                                                            ServerNotifyRegisterEvent.Channel);
 
             GetClientList();
         }
 
         private void GetChannelList()
         {
-            var channels = SyncQueryRunner.GetChannelList(true);
+            ListResponse<ChannelListEntry> channels = _syncQueryRunner.GetChannelList(true);
             if (channels.IsErroneous)
                 throw new Exception("Unable to get the list of channels");
 
@@ -178,39 +184,41 @@ namespace SwitchSpeak
                         if (channels.Values[j].ChannelId == channels.Values[i].ParentChannelId)
                         {
                             //we found the parent, we need to remove the child from list and add it to the parent
-                            var channel = channels.Values[i];
+                            ChannelListEntry channel = channels.Values[i];
                             channels.Values.RemoveAt(i);
-                            Debug.Write("Blah: " + j.ToString());
 
+                            //Check we haven't run out of channels
                             if (channels.Count() - 1 < j)
                             {
                                 j--;
                             }
                             channels.Values[j].Subchannels.Add(channel);
-                            channels.Values[j].Subchannels = new ObservableCollection<ChannelListEntry>(channels.Values[j].Subchannels.OrderBy(c => c.Order));
+                            channels.Values[j].Subchannels =
+                                new ObservableCollection<ChannelListEntry>(
+                                    channels.Values[j].Subchannels.OrderBy(c => c.Order));
                             break;
                         }
                     }
                 }
             }
 
-            Channels = new ObservableCollection<ChannelListEntry>(channels.Values.OrderBy(c => c.Order));
+            _channels = new ObservableCollection<ChannelListEntry>(channels.Values.OrderBy(c => c.Order));
         }
 
         private void GetClientList()
         {
-            var clients = AsyncServerQueryRunner.GetClientList(true);
+            ListResponse<ClientListEntry> clients = _asyncServerQueryRunner.GetClientList(true);
             if (clients.IsErroneous)
                 throw new Exception("Unable to get the list of clients");
 
-            foreach (var channel in Channels)
+            foreach (ChannelListEntry channel in _channels)
             {
-                foreach (var client in clients.Values)
+                foreach (ClientListEntry client in clients.Values)
                 {
-                    if (client.ClientId == me.ClientId)
+                    if (client.ClientId == _me.ClientId)
                     {
                         client.IsMe = true;
-                        me.ChannelId = client.ChannelId;
+                        _me.ChannelId = client.ChannelId;
                     }
 
                     if (client.ChannelId == channel.ChannelId)
@@ -219,7 +227,7 @@ namespace SwitchSpeak
                         continue;
                     }
 
-                    foreach (var subchannel in channel.Subchannels)
+                    foreach (ChannelListEntry subchannel in channel.Subchannels)
                     {
                         if (client.ChannelId == subchannel.ChannelId)
                         {
@@ -238,7 +246,7 @@ namespace SwitchSpeak
 
         private void ThroughEachChannel(ChannelListEntry channel, ClientListEntry client)
         {
-            foreach (var subchannel in channel.Subchannels)
+            foreach (ChannelListEntry subchannel in channel.Subchannels)
             {
                 if (client.ChannelId == subchannel.ChannelId)
                 {
@@ -258,41 +266,42 @@ namespace SwitchSpeak
             Debug.WriteLine("Refreshing channel and client list");
             try
             {
-                Application.Current.Dispatcher.Invoke((Action)delegate
+                Application.Current.Dispatcher.Invoke((Action) delegate
                 {
                     GetChannelList();
                     GetClientList();
-                    treeSpeak.ItemsSource = Channels;
+                    treeSpeak.ItemsSource = _channels;
                 });
             }
             catch (Exception ex)
             {
-                Debug.WriteLine("An error occured while refreshing channels and clients: " + ex.Message + Environment.NewLine + ex.StackTrace);
+                Debug.WriteLine("An error occured while refreshing channels and clients: " + ex.Message +
+                                Environment.NewLine + ex.StackTrace);
             }
         }
 
-        private void Notifications_ClientMoveForced(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientMovedByClientEventArgs e)
+        private void Notifications_ClientMoveForced(object sender, ClientMovedByClientEventArgs e)
         {
             Debug.WriteLine("Client move forced");
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientMovedByTemporaryChannelCreate(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientMovedEventArgs e)
+        private void Notifications_ClientMovedByTemporaryChannelCreate(object sender, ClientMovedEventArgs e)
         {
             Debug.WriteLine("Client move to temp channel");
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientMoved(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientMovedEventArgs e)
+        private void Notifications_ClientMoved(object sender, ClientMovedEventArgs e)
         {
             Debug.WriteLine("Client move");
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientKick(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientKickEventArgs e)
+        private void Notifications_ClientKick(object sender, ClientKickEventArgs e)
         {
             Debug.WriteLine("Client kick");
-            if (e.VictimClientId == me.ClientId)
+            if (e.VictimClientId == _me.ClientId)
             {
                 Disconnect();
                 return;
@@ -301,16 +310,16 @@ namespace SwitchSpeak
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientJoined(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientJoinedEventArgs e)
+        private void Notifications_ClientJoined(object sender, ClientJoinedEventArgs e)
         {
             Debug.WriteLine("Client join");
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientDisconnect(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientDisconnectEventArgs e)
+        private void Notifications_ClientDisconnect(object sender, ClientDisconnectEventArgs e)
         {
             Debug.WriteLine("Client disconnect");
-            if (e.ClientId == me.ClientId)
+            if (e.ClientId == _me.ClientId)
             {
                 Disconnect();
                 return;
@@ -319,10 +328,10 @@ namespace SwitchSpeak
             RefreshChannelsAndClients();
         }
 
-        private void Notifications_ClientConnectionLost(object sender, TS3QueryLib.Core.Server.Notification.EventArgs.ClientConnectionLostEventArgs e)
+        private void Notifications_ClientConnectionLost(object sender, ClientConnectionLostEventArgs e)
         {
             Debug.WriteLine("Client connection lost");
-            if (e.ClientId == me.ClientId)
+            if (e.ClientId == _me.ClientId)
             {
                 Disconnect();
                 return;
@@ -338,10 +347,10 @@ namespace SwitchSpeak
 
         private void Notifications_ChannelTalkStatusChanged(object sender, TalkStatusEventArgsBase e)
         {
-            UpdateClientTalkStatus(Channels, e.ClientId, e.TalkStatus);
+            UpdateClientTalkStatus(_channels, e.ClientId, e.TalkStatus);
         }
 
-        private void QueryDispatcher_ServerClosedConnection(object sender, System.EventArgs e)
+        private void QueryDispatcher_ServerClosedConnection(object sender, EventArgs e)
         {
             // this event is raised when the connection to the server is lost.
             Debug.WriteLine("Connection to server closed/lost.");
@@ -352,7 +361,8 @@ namespace SwitchSpeak
 
         private void QueryDispatcher_BanDetected(object sender, EventArgs<SimpleResponse> e)
         {
-            Debug.WriteLine(string.Format("You're account was banned!\nError-Message: {0}\nBan-Message:{1}", e.Value.ErrorMessage, e.Value.BanExtraMessage));
+            Debug.WriteLine("You're account was banned!\nError-Message: {0}\nBan-Message:{1}", e.Value.ErrorMessage,
+                e.Value.BanExtraMessage);
 
             // force disconnect
             Disconnect();
@@ -373,94 +383,77 @@ namespace SwitchSpeak
 
         public void Disconnect()
         {
-            Channels = new ObservableCollection<ChannelListEntry>();
-            Application.Current.Dispatcher.Invoke((Action)delegate
-            {
-                treeSpeak.ItemsSource = null;
-            });
-            me = null;
+            _channels = new ObservableCollection<ChannelListEntry>();
+            Application.Current.Dispatcher.Invoke((Action) delegate { treeSpeak.ItemsSource = null; });
+            _me = null;
 
-            if (SyncQueryDispatcher != null)
+            if (_syncQueryDispatcher != null)
             {
-                SyncQueryDispatcher.Dispose();
-                SyncQueryDispatcher = null;
+                _syncQueryDispatcher.Dispose();
+                _syncQueryDispatcher = null;
             }
 
-            if (SyncQueryRunner != null)
+            if (_syncQueryRunner != null)
             {
-                SyncQueryRunner.Dispose();
-                SyncQueryRunner = null;
+                _syncQueryRunner.Dispose();
+                _syncQueryRunner = null;
             }
 
-            if (AsyncClientQueryRunner != null)
-                AsyncClientQueryRunner.Notifications.ChannelTalkStatusChanged -= Notifications_ChannelTalkStatusChanged;
-            if (AsyncClientQueryRunner != null)
-                AsyncClientQueryRunner.Dispose();
-            if (AsyncClientQueryRunner != null)
-                AsyncClientQueryRunner = null;
-            
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientConnectionLost -= Notifications_ClientConnectionLost;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientDisconnect -= Notifications_ClientDisconnect;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientJoined -= Notifications_ClientJoined;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientKick -= Notifications_ClientKick;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientMoved -= Notifications_ClientMoved;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientMovedByTemporaryChannelCreate -= Notifications_ClientMovedByTemporaryChannelCreate;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Notifications.ClientMoveForced -= Notifications_ClientMoveForced;
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner.Dispose();
-            if (AsyncServerQueryRunner != null)
-                AsyncServerQueryRunner = null;
-            
-
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.BanDetected -= QueryDispatcher_BanDetected;
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.ReadyForSendingCommands -= QueryDispatcher_ReadyForSendingCommands;
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.ServerClosedConnection -= QueryDispatcher_ServerClosedConnection;
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.SocketError -= QueryDispatcher_SocketError;
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.NotificationReceived -= QueryDispatcher_NotificationReceived;
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher.Dispose();
-            if (AsyncQueryDispatcher != null)
-                AsyncQueryDispatcher = null;
-            
+            if (_asyncClientQueryRunner != null)
+                _asyncClientQueryRunner.Notifications.ChannelTalkStatusChanged -= Notifications_ChannelTalkStatusChanged;
+            if (_asyncClientQueryRunner != null)
+                _asyncClientQueryRunner.Dispose();
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientConnectionLost -= Notifications_ClientConnectionLost;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientDisconnect -= Notifications_ClientDisconnect;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientJoined -= Notifications_ClientJoined;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientKick -= Notifications_ClientKick;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientMoved -= Notifications_ClientMoved;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientMovedByTemporaryChannelCreate -=
+                    Notifications_ClientMovedByTemporaryChannelCreate;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Notifications.ClientMoveForced -= Notifications_ClientMoveForced;
+            if (_asyncServerQueryRunner != null)
+                _asyncServerQueryRunner.Dispose();
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.BanDetected -= QueryDispatcher_BanDetected;
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.ReadyForSendingCommands -= QueryDispatcher_ReadyForSendingCommands;
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.ServerClosedConnection -= QueryDispatcher_ServerClosedConnection;
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.SocketError -= QueryDispatcher_SocketError;
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.NotificationReceived -= QueryDispatcher_NotificationReceived;
+            if (_asyncQueryDispatcher != null)
+                _asyncQueryDispatcher.Dispose();
         }
 
-        private void UpdateClientTalkStatus(ObservableCollection<ChannelListEntry> channels, uint clientId, TS3QueryLib.Core.Client.Notification.Enums.TalkStatus talkStatus)
+        private static void UpdateClientTalkStatus(IEnumerable<ChannelListEntry> channels, uint clientId,
+            TalkStatus talkStatus)
         {
-            for (int i = 0; i < channels.Count; i++)
+            foreach (var t1 in channels)
             {
-                if (channels[i].Clients.Any(c => c.ClientId == clientId))
+                if (t1.Clients.Any(c => c.ClientId == clientId))
                 {
                     //we found our client that we need to change
-                    for (int j = 0; j < channels[i].Clients.Count; j++)
+                    foreach (var t in t1.Clients.Where(t => t.ClientId == clientId))
                     {
-                        if (channels[i].Clients[j].ClientId == clientId)
-                        {
-                            channels[i].Clients[j].IsClientTalking = talkStatus == TS3QueryLib.Core.Client.Notification.Enums.TalkStatus.TalkStarted;
-                            return;
-                        }
+                        t.IsClientTalking = talkStatus == TalkStatus.TalkStarted;
+                        return;
                     }
                 }
                 else
                 {
                     //keep looking in subchannels until we find what we need
-                    UpdateClientTalkStatus(channels[i].Subchannels, clientId, talkStatus);
+                    UpdateClientTalkStatus(t1.Subchannels, clientId, talkStatus);
                 }
             }
-
-            return;
         }
     }
-
 }
