@@ -55,6 +55,10 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Sharparam.SharpBlade, Version=1.0.128.116, Culture=neutral, processorArchitecture=x86">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\Sharparam.SharpBlade\bin\Debug\Sharparam.SharpBlade.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
@@ -120,10 +124,6 @@
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Sharparam.SharpBlade\Sharparam.SharpBlade.csproj">
-      <Project>{2c390908-d634-4450-9804-71d4929dd392}</Project>
-      <Name>Sharparam.SharpBlade</Name>
-    </ProjectReference>
     <ProjectReference Include="..\TS3QueryLib\TS3QueryLib.csproj">
       <Project>{3d103a6f-14b6-471e-9ed6-44d00012cf44}</Project>
       <Name>TS3QueryLib</Name>

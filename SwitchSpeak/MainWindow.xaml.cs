@@ -19,6 +19,8 @@ using Sharparam.SharpBlade.Razer.Events;
 using Sharparam.SharpBlade.Native;
 using System.Windows.Media;
 using System.Diagnostics;
+using TS3QueryLib.Core.Server.Entities;
+using ChannelListEntry = TS3QueryLib.Core.Client.Entities.ChannelListEntry;
 
 namespace SwitchSpeak
 {
@@ -178,6 +180,12 @@ namespace SwitchSpeak
                             //we found the parent, we need to remove the child from list and add it to the parent
                             var channel = channels.Values[i];
                             channels.Values.RemoveAt(i);
+                            Debug.Write("Blah: " + j.ToString());
+
+                            if (channels.Count() - 1 < j)
+                            {
+                                j--;
+                            }
                             channels.Values[j].Subchannels.Add(channel);
                             channels.Values[j].Subchannels = new ObservableCollection<ChannelListEntry>(channels.Values[j].Subchannels.OrderBy(c => c.Order));
                             break;
@@ -218,7 +226,29 @@ namespace SwitchSpeak
                             subchannel.Clients.Add(client);
                             break;
                         }
+
+                        if (subchannel.Subchannels.Count > 0)
+                        {
+                            ThroughEachChannel(subchannel, client);
+                        }
                     }
+                }
+            }
+        }
+
+        private void ThroughEachChannel(ChannelListEntry channel, ClientListEntry client)
+        {
+            foreach (var subchannel in channel.Subchannels)
+            {
+                if (client.ChannelId == subchannel.ChannelId)
+                {
+                    subchannel.Clients.Add(client);
+                    break;
+                }
+
+                if (subchannel.Subchannels.Count > 0)
+                {
+                    ThroughEachChannel(subchannel, client);
                 }
             }
         }
